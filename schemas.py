@@ -1,32 +1,30 @@
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Optional, Literal
 
 
 class CustomerFeatures(BaseModel):
-    age: int = Field(..., ge=18, le=100, description="Âge du client")
-    tenure: int = Field(..., ge=0, description="Nombre de mois comme client")
-    monthly_charges: float = Field(..., gt=0, description="Charges mensuelles en €")
-    total_charges: float = Field(..., ge=0, description="Total facturé depuis le début")
-    num_products: int = Field(..., ge=1, le=10, description="Nombre de produits souscrits")
-    has_support_contract: int = Field(..., ge=0, le=1, description="Contrat support : 1=oui, 0=non")
-    num_complaints: int = Field(..., ge=0, description="Nombre de réclamations")
+    genre_bota: str = Field(..., description="Genre botanique de l'arbre", example="Prunus")
+    espece: str = Field(..., description="Espèce de l'arbre", example="serrulata")
+    stadededeveloppement: str = Field(..., description="Stade de développement", example="Arbre jeune")
+    hauteurarbre: Optional[float] = Field(None, description="Hauteur de l'arbre en mètres")
+    typenature: Optional[str] = Field(None, description="Type de nature")
+    latitude: float = Field(..., ge=-90, le=90, description="Latitude GPS", example=45.167098)
+    longitude: float = Field(..., ge=-180, le=180, description="Longitude GPS", example=5.740132)
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "age": 35,
-                "tenure": 24,
-                "monthly_charges": 65.90,
-                "total_charges": 1581.60,
-                "num_products": 2,
-                "has_support_contract": 1,
-                "num_complaints": 0,
+                "genre_bota": "Prunus",
+                "espece": "serrulata",
+                "stadededeveloppement": "Arbre jeune",
+                "hauteurarbre": None,
+                "typenature": None,
+                "latitude": 45.167098,
+                "longitude": 5.740132,
             }
         }
     }
 
 
 class PredictionResponse(BaseModel):
-    churn: int = Field(..., description="Prédiction brute : 1=churn, 0=pas de churn")
-    label: Literal["Churn", "No Churn"] = Field(..., description="Label lisible")
-    probability: float = Field(..., ge=0.0, le=1.0, description="Probabilité de churn")
+    annee_plantation_predite: float = Field(..., description="Année de plantation prédite par le modèle")
