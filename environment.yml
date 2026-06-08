@@ -1,1 +1,13 @@
-#
+name: dataprophet
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+    - fastapi==0.111.0 web framework
+    - uvicorn[standard]==0.29.0 serveur ASGI
+    - pydantic==2.7.1 validation
+    - scikit-learn==1.4.2 ML
+    - joblib==1.4.2 sérialisation modèles 
