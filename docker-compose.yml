@@ -1,7 +1,8 @@
 volumes:
   pgdata:
   storage-data:
-
+  grafana_data:
+  airflow-pgdata: 
 services:
   postgres:
     image: postgres:15
@@ -17,6 +18,21 @@ services:
       - ${PGPORT}:${PGPORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -p ${PGPORT}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  # ─── Nouveau : Postgres dédié Airflow ────────────────────────────────────
+  airflow-postgres:
+    image: postgres:15
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -91,6 +107,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
       MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_SERVER_ALLOWED_HOSTS: "*" 
 
       # Server host/port
       MLFLOW_HOST: ${MLFLOW_HOST}
@@ -119,6 +136,102 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+# ─── FastAPI (si pas encore présent) ─────────────────────────────────────
+#  api:
+#    build: .
+#    container_name: dataprophet-api
+#    ports:
+#      - "8000:8000"
+#    depends_on:
+#      mlflow:
+#        condition: service_healthy
+#    environment:
+#      MLFLOW_TRACKING_URI: http://mlflow:${MLFLOW_PORT}
+#      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+#      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+#      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+#      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+# ─── Nouveau : Prometheus ─────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # ← résout le DNS sur Linux
+    restart: unless-stopped
+
+  # ─── Nouveau : Grafana ────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+# ─── Nouveau : Airflow webserver ──────────────────────────────────────────
+  airflow-webserver:
+    image: apache/airflow:2.9.3
+    container_name: airflow-webserver
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-dataprophet-secret}
+      # Accès MLflow depuis les DAGs
+      MLFLOW_TRACKING_URI: http://mlflow:${MLFLOW_PORT}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+    volumes:
+      - ./dags:/opt/airflow/dags          # tes DAGs
+      - ./:/opt/airflow/project           # ton code (retrain.py, etc.)
+    command: >
+      bash -c "pip install mlflow scikit-learn pandas numpy boto3 && airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@dataprophet.com && airflow webserver"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  # ─── Nouveau : Airflow scheduler ─────────────────────────────────────────
+  airflow-scheduler:
+    image: apache/airflow:2.9.3
+    container_name: airflow-scheduler
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-dataprophet-secret}
+      MLFLOW_TRACKING_URI: http://mlflow:${MLFLOW_PORT}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./:/opt/airflow/project
+    #command: airflow scheduler
+    command: >
+      bash -c "pip install mlflow scikit-learn pandas numpy boto3 && airflow scheduler"
+    restart: unless-stopped
 
 networks:
   default:
