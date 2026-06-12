@@ -1,10 +1,12 @@
 # main.py
+
 import uuid
 import json
 from pathlib import Path
 import time
 from fastapi.responses import Response                               # ← nouveau
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST  # ← nouveau
+from prometheus_fastapi_instrumentator import Instrumentator
 from metrics import PREDICTION_COUNTER, PREDICTION_DURATION         # ← nouveau
 import mlflow.sklearn
 import mlflow
@@ -32,6 +34,7 @@ async def lifespan(app: FastAPI):
     # Chargement depuis le Registry — stage Production
     print("⏳ Chargement du modèle depuis MLflow Registry...")
     model = mlflow.sklearn.load_model("models:/DataProphet/Production")
+    #Instrumentator().instrument(app).expose(app, endpoint="/metrics")
     print("✅ Modèle chargé depuis MLflow Registry (DataProphet/Production)")
 
     yield  # l'API est prête
@@ -47,7 +50,7 @@ app = FastAPI(
     version     = "2.0.0",
     lifespan    = lifespan,
 )
-
+Instrumentator().instrument(app).expose(app, endpoint="/metrics-system")
 @app.get("/health")
 def health():
     return {"status": "ok", "model": "DataProphet/Production"}
@@ -66,6 +69,7 @@ def predict(data: CustomerFeatures):
 
     PREDICTION_COUNTER.labels(age_category=age_category).inc()
     PREDICTION_DURATION.observe(duration)                           # ← nouveau
+    time.sleep(0.6) 
     return PredictionResponse(annee_plantation_predite=round(float(prediction[0]), 2))
 @app.get("/metrics")                                                 # ← nouveau
 def metrics():                                                       # ← nouveau
