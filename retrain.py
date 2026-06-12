@@ -17,7 +17,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 # ─────────────────────────────────────────────
 # 0. Configuration
 # ─────────────────────────────────────────────
-TRACKING_URI  = "http://localhost:5000"
+#TRACKING_URI  = "http://localhost:5000"
+TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
 EXPERIMENT    = "dataprophet-tree-retrain"
 MODEL_NAME    = "DataProphet"
 DATA_PATH     = "data.pkl"
@@ -45,7 +46,7 @@ client = MlflowClient(tracking_uri=TRACKING_URI)
 # ─────────────────────────────────────────────
 # 2. Chargement des données de base
 # ─────────────────────────────────────────────
-print("📂 Chargement des données de base...")
+print(" Chargement des données de base...")
 df = pd.read_pickle(DATA_PATH)
 df = df[FEATURES + [TARGET]].dropna()
 print(f"   {len(df)} lignes chargées depuis {DATA_PATH}")
@@ -60,7 +61,7 @@ feedback_files = [
 ]
 
 if feedback_files:
-    print(f"📬 {len(feedback_files)} fichier(s) de feedback trouvé(s) :")
+    print(f" {len(feedback_files)} fichier(s) de feedback trouvé(s) :")
     dfs_feedback = []
     for fname in feedback_files:
         path = os.path.join(HELP_DATA_DIR, fname)
@@ -72,7 +73,7 @@ if feedback_files:
     df = pd.concat([df] + dfs_feedback, ignore_index=True)
     print(f"   → Dataset final : {len(df)} lignes")
 else:
-    print("📭 Aucune donnée de feedback (help_data/ vide) — entraînement sur données de base uniquement")
+    print(" Aucune donnée de feedback (help_data/ vide) — entraînement sur données de base uniquement")
 
 # ─────────────────────────────────────────────
 # 4. Préparation des données
@@ -96,9 +97,17 @@ preprocessor = ColumnTransformer(transformers=[
 pipeline = Pipeline(steps=[
     ("preprocessor", preprocessor),
     ("model", RandomForestRegressor(
-        n_estimators = 200,
-        random_state = 42,
-        n_jobs       = -1,
+       # n_estimators = 100,
+       # random_state = 42,
+       # n_jobs       = -1,
+	
+        n_estimators=400,        # plus d'arbres = plus stable (200 → 400)
+        max_depth=20,            # limite la profondeur, réduit l'overfitting (None = illimité)
+        min_samples_split=5,     # nb minimum d'échantillons pour splitter un nœud
+        min_samples_leaf=2,      # nb minimum d'échantillons dans une feuille
+        max_features="sqrt",     # nb de features considérées à chaque split
+        random_state=42,
+        n_jobs=-1,
     ))
 ])
 
@@ -112,16 +121,16 @@ for v in versions:
     if v.current_stage == "Production":
         run = client.get_run(v.run_id)
         production_rmse = run.data.metrics.get("RMSE")
-        print(f"\n🏭 Modèle en Production : version {v.version} — RMSE = {production_rmse:.4f}")
+        print(f"\n Modèle en Production : version {v.version} — RMSE = {production_rmse:.4f}")
         break
 
 if production_rmse is None:
-    print("\n⚠️  Aucun modèle en Production trouvé — la promotion sera faite sans comparaison")
+    print("\n  Aucun modèle en Production trouvé — la promotion sera faite sans comparaison")
 
 # ─────────────────────────────────────────────
 # 7. Entraînement + instrumentation MLflow
 # ─────────────────────────────────────────────
-print("\n🏋️  Entraînement en cours...")
+print("\n  Entraînement en cours...")
 
 with mlflow.start_run() as run:
 
@@ -153,7 +162,7 @@ with mlflow.start_run() as run:
     new_version = client.search_model_versions(f"name='{MODEL_NAME}'")
     new_version = max(new_version, key=lambda v: int(v.version)).version
 
-    print(f"\n✅ Run terminé — version {new_version} enregistrée")
+    print(f"\n Run terminé — version {new_version} enregistrée")
     print(f"   MAE  : {mae:.4f}")
     print(f"   RMSE : {rmse:.4f}")
     print(f"   R²   : {r2:.4f}")
@@ -180,16 +189,16 @@ if promote:
         version = new_version,
         stage   = "Staging",
     )
-    print(f"\n🚀 Version {new_version} promue en Staging automatiquement")
+    print(f"\n Version {new_version} promue en Staging automatiquement")
     print(f"   → Lance promote_model.py pour la passer en Production après validation")
 else:
-    print(f"\n⏸️  Version {new_version} laissée en 'None' — amélioration insuffisante")
+    print(f"\n⏸  Version {new_version} laissée en 'None' — amélioration insuffisante")
     print(f"   → Le modèle en Production reste en place")
 
 # ─────────────────────────────────────────────
 # 9. État final du Registry
 # ─────────────────────────────────────────────
-print("\n📋 État final du Registry :\n")
+print("\n État final du Registry :\n")
 for v in client.search_model_versions(f"name='{MODEL_NAME}'"):
     icons = {"Production": "✅", "Staging": "🔶", "Archived": "📦"}
     icon  = icons.get(v.current_stage, "  ")
