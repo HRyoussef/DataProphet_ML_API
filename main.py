@@ -69,7 +69,7 @@ def predict(data: CustomerFeatures):
 
     PREDICTION_COUNTER.labels(age_category=age_category).inc()
     PREDICTION_DURATION.observe(duration)                           # ← nouveau
-    time.sleep(0.6) 
+#    time.sleep(0.6) 
     return PredictionResponse(annee_plantation_predite=round(float(prediction[0]), 2))
 @app.get("/metrics")                                                 # ← nouveau
 def metrics():                                                       # ← nouveau
