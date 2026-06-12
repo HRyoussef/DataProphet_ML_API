@@ -13,3 +13,6 @@ dependencies:
     - scikit-learn==1.4.2
     - joblib==1.4.2
     - mlflow==3.13.0
+    - prometheus-client==0.21.1
+    - apache-airflow==3.0.2
+    - apache-airflow-providers-common-sql
