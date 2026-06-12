@@ -1,11 +1,22 @@
 # main.py
+import uuid
+import json
+from pathlib import Path
+import time
+from fastapi.responses import Response                               # ← nouveau
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST  # ← nouveau
+from metrics import PREDICTION_COUNTER, PREDICTION_DURATION         # ← nouveau
 import mlflow.sklearn
 import mlflow
 import pandas as pd
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 #from schemas import TreeInput, PredictionOutput
-from schemas import CustomerFeatures, PredictionResponse
+from schemas import CustomerFeatures, PredictionResponse, HelpData
+
+
+HELP_DATA_DIR = Path("help_data")
+HELP_DATA_DIR.mkdir(exist_ok=True)   # crée le dossier si inexistant
 # ─────────────────────────────────────────────
 # Lifespan : chargement du modèle au démarrage
 # ─────────────────────────────────────────────
@@ -44,5 +55,28 @@ def health():
 @app.post("/api/predict", response_model=PredictionResponse)
 def predict(data: CustomerFeatures):
     df = pd.DataFrame([data.model_dump()])
+    start = time.time()
     prediction = model.predict(df)
+    duration = time.time() - start
+    # Calcul de la décennie pour le label Counter
+    # ex: 1994 → "1990s",  2003 → "2000s"
+#    decade = f"{int(prediction.item()) // 10 * 10}s"                # ← nouveau
+    # Arbre planté avant 2000 → "vieux", après → "jeune"
+    age_category = "jeune" if data.hauteurarbre in ["de 0 m à 5 m", "de 5 m à 10 m"] else "vieux"
+
+    PREDICTION_COUNTER.labels(age_category=age_category).inc()
+    PREDICTION_DURATION.observe(duration)                           # ← nouveau
     return PredictionResponse(annee_plantation_predite=round(float(prediction[0]), 2))
+@app.get("/metrics")                                                 # ← nouveau
+def metrics():                                                       # ← nouveau
+    return Response(                                                 # ← nouveau
+        content=generate_latest(),                                   # ← nouveau
+        media_type=CONTENT_TYPE_LATEST,                             # ← nouveau
+    )
+
+
+@app.post("/api/helpdata")
+def collect_feedback(data: HelpData):
+    fichier = HELP_DATA_DIR / f"{uuid.uuid4()}.json"
+    fichier.write_text(json.dumps(data.model_dump(), indent=2))
+    return {"status": "saved", "fichier": fichier.name}
