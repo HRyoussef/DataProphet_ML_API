@@ -29,3 +29,14 @@ class CustomerFeatures(BaseModel):
 
 class PredictionResponse(BaseModel):
     annee_plantation_predite: float = Field(..., description="Année de plantation prédite par le modèle")
+class HelpData(BaseModel):
+    # Features de l'arbre
+    genre_bota: str
+    espece: str
+    stadededeveloppement: str
+    hauteurarbre: str
+    typenature: str
+    latitude: float
+    longitude: float
+    # Label correct observé sur le terrain
+    annee_plantation_reelle: int
